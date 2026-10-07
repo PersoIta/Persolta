@@ -5,8 +5,6 @@
    ========================================================= */
 const SUPABASE_URL = "https://tzolokxetilunyfzovav.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_0HJWnbqDMg1LFwLuhaRLDg_FvEXwxZd";
-
-
 const { createClient } = supabase;
 
 const db = createClient(
@@ -62,6 +60,7 @@ function go(page) {
       window.location.href =
         "catalogo.html?loja=" +
         encodeURIComponent(currentStore.id_loja);
+
       return;
     }
 
@@ -220,7 +219,8 @@ async function requireAuth() {
       return false;
     }
 
-    currentUser = session.user;
+    currentUser =
+      session.user;
 
     return true;
 
@@ -256,11 +256,20 @@ async function logout() {
 
 async function loadUserContext() {
   if (!currentUser) {
+    console.error(
+      "loadUserContext: currentUser não existe."
+    );
+
     return false;
   }
 
   try {
-    const result =
+    console.log(
+      "Carregando usuário:",
+      currentUser.id
+    );
+
+    const userResult =
       await db
         .from("gestao_loja_usuarios")
         .select(
@@ -270,24 +279,33 @@ async function loadUserContext() {
           "id",
           currentUser.id
         )
-        .single();
+        .maybeSingle();
 
-    if (result.error) {
+    if (userResult.error) {
       console.error(
         "Erro ao carregar usuário:",
-        result.error
+        userResult.error
       );
 
-      return false;
+      throw new Error(
+        "Erro ao carregar usuário: " +
+        userResult.error.message
+      );
     }
 
-    const user = result.data;
+    const user =
+      userResult.data;
 
     if (!user) {
-      await logout();
-
-      return false;
+      throw new Error(
+        "Usuário autenticado não foi encontrado na tabela gestao_loja_usuarios."
+      );
     }
+
+    console.log(
+      "Usuário carregado:",
+      user
+    );
 
     if (!user.ativo) {
       alert(
@@ -299,6 +317,17 @@ async function loadUserContext() {
       return false;
     }
 
+    if (!user.id_loja) {
+      throw new Error(
+        "O usuário não possui uma loja vinculada (id_loja)."
+      );
+    }
+
+    console.log(
+      "ID da loja:",
+      user.id_loja
+    );
+
     const storeResult =
       await db
         .from("gestao_loja_lojas")
@@ -307,7 +336,7 @@ async function loadUserContext() {
           "id_loja",
           user.id_loja
         )
-        .single();
+        .maybeSingle();
 
     if (storeResult.error) {
       console.error(
@@ -315,11 +344,34 @@ async function loadUserContext() {
         storeResult.error
       );
 
-      return false;
+      throw new Error(
+        "Erro ao carregar loja: " +
+        storeResult.error.message
+      );
+    }
+
+    const store =
+      storeResult.data;
+
+    if (!store) {
+      throw new Error(
+        "A loja vinculada ao usuário não foi encontrada na tabela gestao_loja_lojas."
+      );
+    }
+
+    if (!store.id_loja) {
+      throw new Error(
+        "A loja foi encontrada, mas não possui id_loja."
+      );
     }
 
     currentStore =
-      storeResult.data;
+      store;
+
+    console.log(
+      "Loja carregada:",
+      currentStore
+    );
 
     if ($("userName")) {
       $("userName").textContent =
@@ -341,6 +393,57 @@ async function loadUserContext() {
         "Loja";
     }
 
+    if ($("storeDisplayName")) {
+      $("storeDisplayName").textContent =
+        currentStore.nome_fantasia ||
+        currentStore.nome ||
+        "Loja";
+    }
+
+    if ($("storeDisplayInfo")) {
+      const info = [];
+
+      if (currentStore.cnpj) {
+        info.push(
+          "CNPJ: " +
+          currentStore.cnpj
+        );
+      }
+
+      if (currentStore.telefone) {
+        info.push(
+          "Telefone: " +
+          currentStore.telefone
+        );
+      }
+
+      if (currentStore.email) {
+        info.push(
+          "E-mail: " +
+          currentStore.email
+        );
+      }
+
+      if (
+        currentStore.cidade ||
+        currentStore.estado
+      ) {
+        info.push(
+          [
+            currentStore.cidade,
+            currentStore.estado
+          ]
+            .filter(Boolean)
+            .join("/")
+        );
+      }
+
+      $("storeDisplayInfo").textContent =
+        info.length
+          ? info.join(" • ")
+          : "Dados da loja carregados.";
+    }
+
     return true;
 
   } catch (error) {
@@ -349,12 +452,24 @@ async function loadUserContext() {
       error
     );
 
+    const pageError =
+      $("pageError");
+
+    if (pageError) {
+      showMessage(
+        pageError,
+        error.message ||
+        "Não foi possível carregar os dados da loja."
+      );
+    }
+
     return false;
   }
 }
 
 async function loadMenu() {
-  const menu = $("menu");
+  const menu =
+    $("menu");
 
   if (!menu) {
     return;
@@ -429,6 +544,8 @@ async function initDashboard() {
     return;
   }
 
+  await loadMenu();
+
   setActiveNav();
 
   if ($("pageSubtitle")) {
@@ -437,11 +554,15 @@ async function initDashboard() {
   }
 
   try {
+    const storeId =
+      currentStore.id_loja;
+
     const [
       products,
       variations,
       clients
     ] = await Promise.all([
+
       db
         .from(
           "gestao_loja_produtos"
@@ -452,6 +573,10 @@ async function initDashboard() {
             count: "exact",
             head: true
           }
+        )
+        .eq(
+          "id_loja",
+          storeId
         ),
 
       db
@@ -464,6 +589,10 @@ async function initDashboard() {
             count: "exact",
             head: true
           }
+        )
+        .eq(
+          "id_loja",
+          storeId
         ),
 
       db
@@ -477,14 +606,39 @@ async function initDashboard() {
             head: true
           }
         )
+        .eq(
+          "id_loja",
+          storeId
+        )
+
     ]);
+
+    if (products.error) {
+      throw products.error;
+    }
+
+    if (variations.error) {
+      throw variations.error;
+    }
+
+    if (clients.error) {
+      throw clients.error;
+    }
 
     const stock =
       await db
         .from(
           "gestao_loja_produtos_variacoes"
         )
-        .select("estoque");
+        .select("estoque")
+        .eq(
+          "id_loja",
+          storeId
+        );
+
+    if (stock.error) {
+      throw stock.error;
+    }
 
     if ($("countProducts")) {
       $("countProducts").textContent =
@@ -541,16 +695,34 @@ async function initDashboard() {
 
 document.addEventListener(
   "DOMContentLoaded",
-  function () {
+  async function () {
     login();
 
     if (
       document.body.dataset.page ===
       "dashboard"
     ) {
-      initDashboard();
+      await initDashboard();
+
+      return;
     }
 
-    loadMenu();
+    const authenticated =
+      await requireAuth();
+
+    if (!authenticated) {
+      return;
+    }
+
+    const contextLoaded =
+      await loadUserContext();
+
+    if (!contextLoaded) {
+      return;
+    }
+
+    await loadMenu();
+
+    setActiveNav();
   }
 );
