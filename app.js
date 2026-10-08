@@ -6,7 +6,6 @@
 const SUPABASE_URL = "https://tzolokxetilunyfzovav.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_0HJWnbqDMg1LFwLuhaRLDg_FvEXwxZd";
 const { createClient } = supabase;
-
 const db = createClient(
   SUPABASE_URL,
   SUPABASE_ANON_KEY
@@ -696,16 +695,41 @@ async function initDashboard() {
 document.addEventListener(
   "DOMContentLoaded",
   async function () {
-    login();
 
+    const loginForm =
+      $("loginForm");
+
+    const isLoginPage =
+      !!loginForm;
+
+
+    /*
+     * A página de login é uma exceção.
+     * Ela não deve executar requireAuth(),
+     * pois ainda não existe sessão.
+     */
+    if (isLoginPage) {
+
+      login();
+
+      return;
+    }
+
+
+    /*
+     * Todas as outras páginas precisam
+     * de um usuário autenticado.
+     */
     if (
       document.body.dataset.page ===
       "dashboard"
     ) {
+
       await initDashboard();
 
       return;
     }
+
 
     const authenticated =
       await requireAuth();
@@ -714,6 +738,7 @@ document.addEventListener(
       return;
     }
 
+
     const contextLoaded =
       await loadUserContext();
 
@@ -721,8 +746,10 @@ document.addEventListener(
       return;
     }
 
+
     await loadMenu();
 
     setActiveNav();
+
   }
 );
